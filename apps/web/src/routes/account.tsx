@@ -13,6 +13,7 @@ import { Button } from "#/components/ui/button";
 import { authClient } from "#/lib/auth-client";
 import { carriesASignature } from "#/lib/oauth-flow";
 import { getAuthOptions, getSession, hasPassword, ownsThisServer } from "#/lib/session";
+import { isTwoFactor } from "#/lib/sign-in-method";
 import { useDocumentTitle } from "#/lib/title";
 
 export const Route = createFileRoute("/account")({
@@ -124,9 +125,15 @@ function AccountPage() {
 				<AccountTwoFactor
 					enabled={session.user.twoFactorEnabled === true}
 					email={session.user.email}
+					signedInWithTwoFactors={isTwoFactor(session.session.signInMethod)}
 				/>
 			)}
-			{data.passkeys && <AccountPasskeys />}
+			{data.passkeys && (
+				<AccountPasskeys
+					twoFactorOn={session.user.twoFactorEnabled === true}
+					signedInWithTwoFactors={isTwoFactor(session.session.signInMethod)}
+				/>
+			)}
 			{/* A changed password replaces this session, and with it what the list has to show. */}
 			<AccountSessions
 				key={session.session.id}

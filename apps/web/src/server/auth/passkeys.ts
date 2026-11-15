@@ -9,8 +9,13 @@ import {
 import { and, eq, exists, inArray, ne, or } from "drizzle-orm";
 import { z } from "zod";
 import { describeDevice } from "../../lib/device";
+import {
+	TWO_FACTORS_TO_ADD_A_PASSKEY,
+	TWO_FACTORS_TO_REMOVE_A_PASSKEY,
+} from "../../lib/sign-in-method";
 import type { Database } from "../db";
 import { schema } from "../db";
+import { factorsBehindOneFactor } from "./another-factor";
 
 const AUTHENTICATE_OPTIONS = "/passkey/generate-authenticate-options";
 const VERIFY_AUTHENTICATION = "/passkey/verify-authentication";
@@ -127,7 +132,8 @@ function passkeyRules(db: Database, githubSignIn: boolean) {
 					method: "POST",
 					body: z.object({ id: z.string() }),
 					// As recent a sign-in as adding one takes: a stolen cookie should not be able to take
-					// away what the person would use to get back in.
+					// away what the person would use to get back in. A hook below also asks that the
+					// sign-in showed two factors.
 					use: [freshSessionMiddleware],
 				},
 				async (ctx) => {
@@ -171,6 +177,31 @@ function passkeyRules(db: Database, githubSignIn: boolean) {
 		},
 		hooks: {
 			before: [
+				{
+					// Both steps, so that a ceremony begun by a session that showed two factors cannot be
+					// finished by one that did not.
+					matcher: (ctx) => ctx.path === REGISTER_OPTIONS || ctx.path === VERIFY_REGISTRATION,
+					handler: createAuthMiddleware(async (ctx) => {
+						// A passkey passes a workspace's rule on two-factor sign-in by itself. Someone who
+						// holds one of a person's factors, such as their GitHub account, could otherwise add
+						// their own and be both. A first one is taken on trust: see `another-factor.ts`.
+						const has = await factorsBehindOneFactor(db, ctx);
+						if (has?.authenticator || has?.passkey) {
+							throw APIError.from("FORBIDDEN", TWO_FACTORS_TO_ADD_A_PASSKEY);
+						}
+					}),
+				},
+				{
+					matcher: (ctx) => ctx.path === REMOVE,
+					handler: createAuthMiddleware(async (ctx) => {
+						// Whoever holds only a person's password or GitHub account could otherwise remove
+						// their passkey, be left with an account that has no second factor, and enrol their
+						// own on trust. Any passkey, not only the last: a session with one factor takes no
+						// second factor away. Renaming one takes nothing away, and is not held to this.
+						const has = await factorsBehindOneFactor(db, ctx);
+						if (has?.passkey) throw APIError.from("FORBIDDEN", TWO_FACTORS_TO_REMOVE_A_PASSKEY);
+					}),
+				},
 				{
 					matcher: (ctx) => ctx.path === RENAME || ctx.path === VERIFY_REGISTRATION,
 					handler: createAuthMiddleware(async (ctx) => {

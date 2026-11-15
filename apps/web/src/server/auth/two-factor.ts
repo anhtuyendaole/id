@@ -1,8 +1,17 @@
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { twoFactor } from "better-auth/plugins/two-factor";
+import {
+	TWO_FACTORS_TO_ADD_AN_AUTHENTICATOR,
+	TWO_FACTORS_TO_CHANGE_TWO_FACTOR,
+} from "../../lib/sign-in-method";
+import type { Database } from "../db";
+import { factorsBehindOneFactor } from "./another-factor";
 import { ownerOfChallenge, type RecordEvent, whereFrom } from "./audit";
 
+const ENABLE = "/two-factor/enable";
+const DISABLE = "/two-factor/disable";
+const REPLACE_RECOVERY_CODES = "/two-factor/generate-backup-codes";
 const VERIFY_TOTP = "/two-factor/verify-totp";
 const VERIFY_RECOVERY_CODE = "/two-factor/verify-backup-code";
 
@@ -39,6 +48,7 @@ function recoveryCode(): string {
 }
 
 export interface TwoFactorSettings {
+	db: Database;
 	record: RecordEvent;
 	/** Whether this is the first time this person's code has been offered. See below. */
 	firstUseOfCode: ((key: string) => Promise<boolean>) | undefined;
@@ -65,11 +75,44 @@ export function twoFactorPlugins(settings: TwoFactorSettings) {
 	];
 }
 
-function twoFactorRules({ record, firstUseOfCode }: TwoFactorSettings) {
+function twoFactorRules({ db, record, firstUseOfCode }: TwoFactorSettings) {
 	return {
 		id: "two-factor-rules",
 		hooks: {
 			before: [
+				{
+					// Asking for an authenticator, and confirming one while signed in, which is what turns
+					// two-factor on and makes the session one that showed a code.
+					matcher: ({ path }) => path === ENABLE || path === VERIFY_TOTP,
+					handler: createAuthMiddleware(async (ctx) => {
+						// As for a passkey: someone who has one, and whose password another person holds,
+						// must not get an authenticator from that password. See `another-factor.ts`.
+						const has = await factorsBehindOneFactor(db, ctx);
+						if (!has) return;
+						// With two-factor on, a code offered from a session changes nothing, and is not an
+						// authenticator being added.
+						const adding = ctx.path === ENABLE || !has.authenticator;
+						if (adding && (has.authenticator || has.passkey)) {
+							throw APIError.from("FORBIDDEN", TWO_FACTORS_TO_ADD_AN_AUTHENTICATOR);
+						}
+					}),
+				},
+				{
+					// Turning it off, and new recovery codes, each of which is a code to sign in with.
+					matcher: ({ path }) => path === DISABLE || path === REPLACE_RECOVERY_CODES,
+					handler: createAuthMiddleware(async (ctx) => {
+						// Both take the password, which is the one factor that whoever holds it has. With
+						// two-factor off the account has no second factor and takes the next on trust, and
+						// new recovery codes are a second factor handed over. So a session that showed one
+						// factor does neither: another device signed in before it was turned on, GitHub's,
+						// or one that does not say how it was made. A recovery code after the password is
+						// two, which is how someone who lost their authenticator turns it off themselves.
+						const has = await factorsBehindOneFactor(db, ctx);
+						if (has?.authenticator) {
+							throw APIError.from("FORBIDDEN", TWO_FACTORS_TO_CHANGE_TWO_FACTOR);
+						}
+					}),
+				},
 				{
 					matcher: ({ path }) => path === VERIFY_TOTP || path === VERIFY_RECOVERY_CODE,
 					handler: createAuthMiddleware(async (ctx) => {

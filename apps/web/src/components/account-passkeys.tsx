@@ -7,6 +7,14 @@ import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { authClient } from "#/lib/auth-client";
 import { nothingHappened, passkeyFailure } from "#/lib/passkey-errors";
+import { TWO_FACTORS_TO_ADD_A_PASSKEY } from "#/lib/sign-in-method";
+
+/**
+ * For someone with a passkey who signed in without one, who may neither add nor remove. The server
+ * has a sentence for each, and two that differ by a word would read as a mistake.
+ */
+const TWO_FACTORS_TO_ADD_OR_REMOVE =
+	"Sign in with your passkey or your authenticator code first, then add or remove a passkey.";
 
 interface ListedPasskey {
 	id: string;
@@ -18,8 +26,20 @@ interface ListedPasskey {
 /**
  * The passkeys that can sign this person in, where they can add, name and remove them. It loads in
  * the browser, as the sessions below it do, so that dates read in the person's own time zone.
+ *
+ * Someone who already has a second factor can only add a passkey from a sign-in that used one, and
+ * only such a sign-in removes one. The server refuses any other, and this says so first, in place of
+ * the buttons, where one that only failed would not.
  */
-export function AccountPasskeys() {
+export function AccountPasskeys({
+	twoFactorOn,
+	signedInWithTwoFactors,
+}: {
+	/** Whether a password here is followed by a code from an authenticator. */
+	twoFactorOn: boolean;
+	/** Whether this session was made with a passkey, or a password and a code. */
+	signedInWithTwoFactors: boolean;
+}) {
 	const hydrated = useHydrated();
 	const [passkeys, setPasskeys] = useState<ListedPasskey[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -50,13 +70,17 @@ export function AccountPasskeys() {
 		await load();
 	}
 
+	const canUsePasskeys = !hydrated || browserSupportsWebAuthn();
+	const hasPasskeys = passkeys !== null && passkeys.length > 0;
+	const signInFirst = !signedInWithTwoFactors && (twoFactorOn || hasPasskeys);
+
 	return (
 		<section aria-labelledby="passkeys-heading" className="space-y-4">
 			<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
 				<h2 id="passkeys-heading" className="text-sm font-semibold">
 					Passkeys
 				</h2>
-				{(!hydrated || browserSupportsWebAuthn()) && (
+				{canUsePasskeys && !signInFirst && (
 					<LiveButton variant="outline" size="sm" disabled={adding} onClick={add}>
 						Add a passkey
 					</LiveButton>
@@ -65,6 +89,11 @@ export function AccountPasskeys() {
 			{error && (
 				<p role="alert" className="text-sm text-destructive">
 					{error}
+				</p>
+			)}
+			{canUsePasskeys && signInFirst && (
+				<p className="text-sm text-muted-foreground">
+					{hasPasskeys ? TWO_FACTORS_TO_ADD_OR_REMOVE : TWO_FACTORS_TO_ADD_A_PASSKEY.message}
 				</p>
 			)}
 			{passkeys === null ? (
@@ -77,7 +106,13 @@ export function AccountPasskeys() {
 			) : (
 				<ul className="divide-y rounded-lg border text-sm">
 					{passkeys.map((passkey) => (
-						<PasskeyRow key={passkey.id} passkey={passkey} onChange={load} onError={setError} />
+						<PasskeyRow
+							key={passkey.id}
+							passkey={passkey}
+							mayRemove={signedInWithTwoFactors}
+							onChange={load}
+							onError={setError}
+						/>
 					))}
 				</ul>
 			)}
@@ -87,10 +122,13 @@ export function AccountPasskeys() {
 
 function PasskeyRow({
 	passkey,
+	mayRemove,
 	onChange,
 	onError,
 }: {
 	passkey: ListedPasskey;
+	/** Whether this session showed two factors. One that did not is told why above the list. */
+	mayRemove: boolean;
 	onChange: () => Promise<void>;
 	onError: (message: string | null) => void;
 }) {
@@ -190,9 +228,11 @@ function PasskeyRow({
 					<Button variant="ghost" size="sm" onClick={() => setMode("renaming")}>
 						Rename
 					</Button>
-					<Button variant="ghost" size="sm" onClick={() => setMode("removing")}>
-						Remove
-					</Button>
+					{mayRemove && (
+						<Button variant="ghost" size="sm" onClick={() => setMode("removing")}>
+							Remove
+						</Button>
+					)}
 				</div>
 			)}
 		</li>

@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { passkeyStateQuery, removePasskeysStatements } from "../scripts/passkey-rows";
 import { appRow, insertStatement } from "../src/server/auth/app-row";
 import { type Ceremony, FakeAuthenticator } from "./fake-authenticator";
 import { type GitHubPerson, gitHubCode, startId } from "./id-worker";
@@ -118,6 +119,8 @@ async function askToRegister(person: Person) {
 	return {
 		options: (await response.clone().json()) as RegistrationOptions,
 		cookie: withCookie(person.cookie, response),
+		/** The cookie that holds the ceremony, by itself. */
+		challenge: cookieOf(response),
 	};
 }
 
@@ -189,6 +192,18 @@ async function tryToSignIn(authenticator: FakeAuthenticator, ceremony: Ceremony 
 	return { response, client };
 }
 
+/**
+ * This person in a new session, made with a passkey they have. Someone who already has a passkey can
+ * only add another, or remove one, from a session that showed two factors: "Adding a second factor"
+ * and "Taking a second factor away" in docs/architecture.md, which test/require-two-factor.test.ts
+ * holds.
+ */
+async function signedInWith(person: Person, authenticator: FakeAuthenticator): Promise<Person> {
+	const { response, client } = await tryToSignIn(authenticator);
+	expect(response.status).toBe(200);
+	return { ...person, client, cookie: cookieOf(response) };
+}
+
 async function sessionOf(client: string, response: Response) {
 	const reply = await api("/get-session", { client, cookie: cookieOf(response) });
 	return (await reply.json()) as { user: { id: string } } | null;
@@ -253,7 +268,7 @@ describe("adding a passkey", () => {
 	it("does not offer a device its own passkey again", async () => {
 		const person = await newPersonWithAPassword();
 		const { authenticator } = await withPasskey(person);
-		const { options } = await askToRegister(person);
+		const { options } = await askToRegister(await signedInWith(person, authenticator));
 		expect(options.excludeCredentials.map((credential) => credential.id)).toEqual([
 			authenticator.credentialId,
 		]);
@@ -297,7 +312,7 @@ describe("adding a passkey", () => {
 
 	it("uses a challenge once", async () => {
 		const person = await newPersonWithAPassword();
-		const { options, cookie } = await askToRegister(person);
+		const { options, cookie, challenge } = await askToRegister(person);
 		const authenticator = new FakeAuthenticator(origin);
 		const body = { response: authenticator.register(options) };
 		const first = await api("/passkey/verify-registration", {
@@ -307,9 +322,12 @@ describe("adding a passkey", () => {
 		});
 		expect(first.status).toBe(200);
 
+		// Signed in with the passkey, so that what refuses this is the challenge having been used, and
+		// not how they signed in.
+		const signedIn = await signedInWith(person, authenticator);
 		const again = await api("/passkey/verify-registration", {
-			client: person.client,
-			cookie,
+			client: signedIn.client,
+			cookie: `${signedIn.cookie}; ${challenge}`,
 			body,
 		});
 
@@ -458,10 +476,11 @@ describe("signing in with a passkey", () => {
 	it("does not take a challenge meant for adding a passkey", async () => {
 		const person = await newPersonWithAPassword();
 		const { authenticator } = await withPasskey(person);
-		const { options, cookie } = await askToRegister(person);
+		const signedIn = await signedInWith(person, authenticator);
+		const { options, cookie } = await askToRegister(signedIn);
 
 		const response = await api("/passkey/verify-authentication", {
-			client: person.client,
+			client: signedIn.client,
 			cookie,
 			body: { response: authenticator.signIn(options) },
 		});
@@ -674,7 +693,7 @@ describe("removing a passkey", () => {
 		const person = await newPersonWithAPassword();
 		const { authenticator, passkeyId } = await withPasskey(person);
 
-		const removed = await remove(person, passkeyId);
+		const removed = await remove(await signedInWith(person, authenticator), passkeyId);
 
 		expect(removed.status).toBe(200);
 		expect(await passkeysOf(person)).toEqual([]);
@@ -683,10 +702,11 @@ describe("removing a passkey", () => {
 
 	it("removes it when another passkey is left", async () => {
 		const person = await newPersonWithOnlyACode();
-		const { passkeyId } = await withPasskey(person);
-		const { passkeyId: other } = await withPasskey(person);
+		const { authenticator, passkeyId } = await withPasskey(person);
+		const withFirst = await signedInWith(person, authenticator);
+		const { passkeyId: other } = await withPasskey(withFirst);
 
-		expect((await remove(person, passkeyId)).status).toBe(200);
+		expect((await remove(withFirst, passkeyId)).status).toBe(200);
 		expect((await passkeysOf(person)).map((passkey) => passkey.id)).toEqual([other]);
 	});
 
@@ -694,7 +714,7 @@ describe("removing a passkey", () => {
 		const person = await newPersonWithOnlyACode();
 		const { authenticator, passkeyId } = await withPasskey(person);
 
-		const removed = await remove(person, passkeyId);
+		const removed = await remove(await signedInWith(person, authenticator), passkeyId);
 
 		expect(removed.status).toBe(400);
 		expect(await removed.json()).toMatchObject({ code: "LAST_WAY_TO_SIGN_IN" });
@@ -705,10 +725,11 @@ describe("removing a passkey", () => {
 
 	it("does not let two removals at once take the last two", async () => {
 		const person = await newPersonWithOnlyACode();
-		const { passkeyId: first } = await withPasskey(person);
-		const { passkeyId: second } = await withPasskey(person);
+		const { authenticator, passkeyId: first } = await withPasskey(person);
+		const withFirst = await signedInWith(person, authenticator);
+		const { passkeyId: second } = await withPasskey(withFirst);
 
-		const answers = await Promise.all([remove(person, first), remove(person, second)]);
+		const answers = await Promise.all([remove(withFirst, first), remove(withFirst, second)]);
 
 		expect(answers.map((answer) => answer.status).sort()).toEqual([200, 400]);
 		expect(await passkeysOf(person)).toHaveLength(1);
@@ -737,9 +758,11 @@ describe("removing a passkey", () => {
 			user: { id: string; email: string };
 		};
 		const person = { email: session.user.email, client, cookie, userId: session.user.id };
-		const { passkeyId } = await withPasskey(person);
+		const { authenticator, passkeyId } = await withPasskey(person);
 
-		expect((await remove(person, passkeyId)).status).toBe(200);
+		// From the passkey's session: GitHub's own may not take a passkey away.
+		const removed = await remove(await signedInWith(person, authenticator), passkeyId);
+		expect(removed.status).toBe(200);
 	});
 
 	it("does not count a GitHub link where GitHub sign-in is off", async () => {
@@ -765,10 +788,25 @@ describe("removing a passkey", () => {
 				noGitHub,
 			);
 			const { id: passkeyId } = (await added.json()) as { id: string };
+			// Removing one takes a session that showed two factors, which the passkey's does.
+			const client = newClient();
+			const challenge = await api("/passkey/generate-authenticate-options", { client }, noGitHub);
+			const signedIn = await api(
+				"/passkey/verify-authentication",
+				{
+					client,
+					cookie: cookieOf(challenge),
+					body: {
+						response: authenticator.signIn((await challenge.json()) as AuthenticationOptions),
+					},
+				},
+				noGitHub,
+			);
+			expect(signedIn.status).toBe(200);
 
 			const removed = await api(
 				"/account/remove-passkey",
-				{ ...person, body: { id: passkeyId } },
+				{ client, cookie: cookieOf(signedIn), body: { id: passkeyId } },
 				noGitHub,
 			);
 
@@ -781,10 +819,11 @@ describe("removing a passkey", () => {
 
 	it("needs a recent sign-in", async () => {
 		const person = await newPersonWithAPassword();
-		const { passkeyId } = await withPasskey(person);
+		const { authenticator, passkeyId } = await withPasskey(person);
+		const signedIn = await signedInWith(person, authenticator);
 		await ageSessions(person);
 
-		const removed = await remove(person, passkeyId);
+		const removed = await remove(signedIn, passkeyId);
 
 		expect(removed.status).toBe(403);
 		expect(await removed.json()).toMatchObject({ code: "SESSION_NOT_FRESH" });
@@ -834,9 +873,14 @@ describe("the audit log", () => {
 			ip: client,
 		});
 
-		const removed = await api("/account/remove-passkey", { ...person, body: { id: passkeyId } });
+		// From the session the passkey made, since one with a single factor may not remove it.
+		const removed = await api("/account/remove-passkey", {
+			client,
+			cookie: cookieOf(response),
+			body: { id: passkeyId },
+		});
 		expect(removed.status).toBe(200);
-		await id.auditEventRecorded(person.userId, { type: "passkey_removed", ip: person.client });
+		await id.auditEventRecorded(person.userId, { type: "passkey_removed", ip: client });
 	});
 
 	it("records a failed sign-in against the passkey's owner", async () => {
@@ -853,19 +897,110 @@ describe("the audit log", () => {
 
 	it("records no removal that was refused", async () => {
 		const person = await newPersonWithOnlyACode();
-		const { passkeyId } = await withPasskey(person);
-		const refused = await api("/account/remove-passkey", { ...person, body: { id: passkeyId } });
+		const { authenticator: first, passkeyId } = await withPasskey(person);
+		const withFirst = await signedInWith(person, first);
+		const refused = await api("/account/remove-passkey", {
+			...withFirst,
+			body: { id: passkeyId },
+		});
 		expect(refused.status).toBe(400);
 		// Something later, by the same path.
 		await api("/change-password", {
 			...person,
 			body: { currentPassword: "none", newPassword: "another-long-password" },
 		});
-		const { authenticator } = await withPasskey(person);
+		const { authenticator } = await withPasskey(withFirst);
 		await tryToSignIn(authenticator);
-		await id.auditEventRecorded(person.userId, { type: "sign_in", detail: "passkey" });
-		const events = await id.auditEvents(person.userId);
+		// The second of two sign-ins with a passkey is the last thing here to be written.
+		const events = await vi.waitFor(
+			async () => {
+				const written = await id.auditEvents(person.userId);
+				expect(
+					written.filter(({ type, detail }) => type === "sign_in" && detail === "passkey"),
+				).toHaveLength(2);
+				return written;
+			},
+			{ timeout: 5_000 },
+		);
 		expect(events.filter(({ type }) => type === "passkey_removed")).toEqual([]);
+	});
+});
+
+describe("someone who has lost their only passkey, helped by whoever runs the deployment", () => {
+	async function runFor(email: string) {
+		for (const statement of removePasskeysStatements(email)) {
+			await id.db.prepare(statement).run();
+		}
+	}
+
+	/** Tries to add a passkey. What comes back is the answer of the step that got furthest. */
+	async function tryToAdd(person: Person) {
+		const asked = await api("/passkey/generate-register-options", person);
+		if (asked.status !== 200) return asked;
+		return api("/passkey/verify-registration", {
+			client: person.client,
+			cookie: withCookie(person.cookie, asked),
+			body: {
+				response: new FakeAuthenticator(origin).register(
+					(await asked.json()) as RegistrationOptions,
+				),
+			},
+		});
+	}
+
+	it("has every passkey removed, adds a new one with what is left, and the log says who did it", async () => {
+		const person = await newPersonWithAPassword();
+		const { authenticator: lost } = await withPasskey(person);
+		await withPasskey(await signedInWith(person, lost));
+		const someoneElse = await newPersonWithAPassword();
+		const { authenticator: theirs } = await withPasskey(someoneElse);
+		// Without the passkey, what is left can neither remove it nor add one beside it.
+		expect((await tryToAdd(person)).status).toBe(403);
+
+		await runFor(person.email);
+
+		expect(await passkeysOf(person)).toEqual([]);
+		await expectNotSignedIn(await tryToSignIn(lost), 401);
+		expect(await id.auditEvents(person.userId)).toContainEqual(
+			expect.objectContaining({ type: "passkey_removed", detail: "operator" }),
+		);
+		// One line, however many there were.
+		expect(
+			(await id.auditEvents(person.userId)).filter(({ type }) => type === "passkey_removed"),
+		).toHaveLength(1);
+		// With none left, the next one is a first again.
+		expect((await tryToAdd(person)).status).toBe(200);
+
+		expect(await passkeysOf(someoneElse)).toHaveLength(1);
+		expect((await tryToSignIn(theirs)).response.status).toBe(200);
+		expect(await id.auditEvents(someoneElse.userId)).not.toContainEqual(
+			expect.objectContaining({ type: "passkey_removed" }),
+		);
+	});
+
+	it("writes nothing to the log about someone who had none", async () => {
+		const person = await newPersonWithAPassword();
+		await runFor(person.email);
+		expect(await id.auditEvents(person.userId)).not.toContainEqual(
+			expect.objectContaining({ type: "passkey_removed" }),
+		);
+	});
+
+	it("takes an address as nothing but an address", async () => {
+		const person = await newPersonWithAPassword();
+		await withPasskey(person);
+		await runFor(`${person.email}' OR '1'='1`);
+		expect(await passkeysOf(person)).toHaveLength(1);
+	});
+
+	it("can tell an address nobody has from someone with passkeys or without", async () => {
+		const person = await newPersonWithAPassword();
+		const state = (email: string) => id.db.prepare(passkeyStateQuery(email)).first();
+		expect(await state("nobody-here@example.com")).toBeNull();
+		expect(await state(person.email)).toEqual({ passkeys: 0 });
+		const { authenticator } = await withPasskey(person);
+		await withPasskey(await signedInWith(person, authenticator));
+		expect(await state(person.email)).toEqual({ passkeys: 2 });
 	});
 });
 

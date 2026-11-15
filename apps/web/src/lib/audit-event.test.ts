@@ -194,6 +194,8 @@ describe("describeActivity", () => {
 		expect(words("sign_in_failed", "totp")).toBe("A sign-in with an authenticator app failed");
 		expect(words("two_factor_disabled")).toBe("Turned off two-factor sign-in");
 		expect(words("two_factor_disabled", "operator")).toContain("for you");
+		expect(words("passkey_removed")).toBe("Removed a passkey");
+		expect(words("passkey_removed", "operator")).toContain("for you");
 	});
 
 	it("tells a wrong password given while signed in from a failed sign-in", () => {
@@ -214,6 +216,37 @@ describe("describeActivity", () => {
 		);
 		expect(describeActivity(activity({ type: "refused", app: "Gateweave Track" }))).toBe(
 			"Was refused entry to Gateweave Track",
+		);
+	});
+
+	it("says when a second factor was all that was missing", () => {
+		const refused = (detail: string) =>
+			describeActivity(activity({ type: "refused", app: "Grafana", detail }));
+		expect(refused("authorization+two_factor")).toBe(
+			"Was refused entry to Grafana, whose workspace asks for two-factor sign-in",
+		);
+		expect(refused("refresh_token+two_factor")).toBe(
+			"Was refused entry to Grafana, whose workspace asks for two-factor sign-in",
+		);
+		expect(refused("authorization")).toBe("Was refused entry to Grafana");
+		expect(refused("refresh_token")).toBe("Was refused entry to Grafana");
+	});
+
+	it("says which way a workspace's rule on two-factor sign-in went", () => {
+		const changed = (detail: string | null) =>
+			describeActivity(activity({ type: "workspace_two_factor_changed", detail }));
+		expect(changed(JSON.stringify({ workspace: "Acme", required: true }))).toBe(
+			"Required two-factor sign-in for the apps of Acme",
+		);
+		expect(changed(JSON.stringify({ workspace: "Acme", required: false }))).toBe(
+			"Stopped requiring two-factor sign-in for the apps of Acme",
+		);
+		// What cannot be read does not claim that the rule is on.
+		expect(changed(JSON.stringify({ workspace: "Acme", required: "true" }))).toBe(
+			"Stopped requiring two-factor sign-in for the apps of Acme",
+		);
+		expect(changed("not json")).toBe(
+			"Stopped requiring two-factor sign-in for the apps of a workspace",
 		);
 	});
 
