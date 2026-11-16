@@ -4,6 +4,7 @@ import { z } from "zod";
 import { AuthPage } from "#/components/auth-page";
 import { failureMessage } from "#/components/expired-link";
 import { LiveButton } from "#/components/live-button";
+import { SignInProgress } from "#/components/sign-in-progress";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
@@ -11,6 +12,7 @@ import { authClient } from "#/lib/auth-client";
 import { flowSearch, inFlow, onItsWay, type Search } from "#/lib/oauth-flow";
 import { safeRedirect } from "#/lib/redirect";
 import { getSession } from "#/lib/session";
+import { useSignInBusy, useSignInLatch } from "#/lib/sign-in-latch";
 import { useDocumentTitle } from "#/lib/title";
 
 // Loose, because on the way to an app the query is the app's signed request. See `lib/oauth-flow`.
@@ -71,24 +73,38 @@ function TwoFactorPage() {
 	const router = useRouter();
 	const [recovery, setRecovery] = useState(false);
 	const [error, setError] = useState<ReactNode>(null);
-	const [pending, setPending] = useState(false);
+	// A right code leaves this page, and the button stays off until it has: see `lib/sign-in-latch`.
+	const latch = useSignInLatch();
+	const busy = useSignInBusy(latch);
 	useDocumentTitle("Enter your code");
 
 	async function onSubmit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		const element = event.currentTarget;
 		const code = String(new FormData(element).get("code")).trim();
-		setPending(true);
+		const attempt = latch.take();
+		if (!attempt) return;
 		setError(null);
-		const result = recovery
-			? await authClient.twoFactor.verifyBackupCode({ code: code.toLowerCase() })
-			: await authClient.twoFactor.verifyTotp({ code });
-		setPending(false);
+		const verify = () =>
+			recovery
+				? authClient.twoFactor.verifyBackupCode({ code: code.toLowerCase() })
+				: authClient.twoFactor.verifyTotp({ code });
+		let result: Awaited<ReturnType<typeof verify>>;
+		try {
+			result = await verify();
+		} catch {
+			// The request was never answered. What the browser says about that is not for people.
+			setError("Something went wrong");
+			attempt.release();
+			return;
+		}
 		if (result.error) {
 			setError(refusal(result.error, search));
 			element.reset();
+			attempt.release();
 			return;
 		}
+		attempt.leave();
 		// The auth client has already sent the browser on, when this is on the way to an app.
 		if (onItsWay(result.data)) return;
 		await router.invalidate();
@@ -133,9 +149,10 @@ function TwoFactorPage() {
 						{error}
 					</p>
 				)}
-				<LiveButton type="submit" className="w-full" disabled={pending}>
+				<LiveButton type="submit" className="w-full" disabled={busy}>
 					Continue
 				</LiveButton>
+				<SignInProgress latch={latch} />
 			</form>
 			<Button
 				type="button"
