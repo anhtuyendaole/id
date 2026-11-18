@@ -402,6 +402,12 @@ export function oidcPlugins(
 		oauthProvider({
 			// Read by our patch of the provider (see "A patched dependency" in docs/architecture.md).
 			...(undelivered && ({ backchannelLogoutUndelivered: undelivered } as object)),
+			// The local browser tests use an HTTP callback in a second localhost Worker.
+			// Never permit it when this issuer is deployed on an HTTPS domain.
+			allowInsecureRedirectUri: (url) =>
+				new URL(issuer).protocol === "http:" &&
+				new URL(issuer).hostname === "localhost" &&
+				url.hostname === "localhost",
 			loginPage: "/login",
 			consentPage: "/consent",
 			pairwiseSecret,
