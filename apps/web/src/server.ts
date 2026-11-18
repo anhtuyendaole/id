@@ -33,7 +33,7 @@ export default {
 	// The short cron retries logout handoffs; the daily cron also prunes expired identity rows.
 	async scheduled(controller) {
 		const db = createDb(env.DB);
-		if (controller.cron === "17 3 * * *") await pruneExpired(db);
+		if (controller.cron !== "*/5 * * * *") await pruneExpired(db);
 		if (env.LOGOUTS) await flushLogoutOutbox(db, env.LOGOUTS);
 	},
 	async queue(batch) {

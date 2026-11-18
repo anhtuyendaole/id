@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, lt } from "drizzle-orm";
 import { type Database, schema } from "./db";
 
 export interface OwedLogout {
@@ -13,6 +13,7 @@ export interface LogoutQueue {
 }
 
 const BATCH = 100;
+const MIN_RETRY_AGE_MS = 60_000;
 
 /**
  * Store before sending: a rejected Queue send leaves a row for the next cron. If D1 is unavailable,
@@ -57,11 +58,12 @@ export async function queueOrStoreLogout(
 	}
 }
 
-/** Retry rows whose queue handoff failed. Keep a row until the Queue accepts it. */
+/** Retry rows after the request's handoff has had time to finish. */
 export async function flushLogoutOutbox(db: Database, queue: LogoutQueue): Promise<void> {
 	const rows = await db
 		.select()
 		.from(schema.logoutOutbox)
+		.where(lt(schema.logoutOutbox.createdAt, new Date(Date.now() - MIN_RETRY_AGE_MS)))
 		.orderBy(schema.logoutOutbox.createdAt)
 		.limit(BATCH);
 	for (const row of rows) {
@@ -70,7 +72,6 @@ export async function flushLogoutOutbox(db: Database, queue: LogoutQueue): Promi
 			await db.delete(schema.logoutOutbox).where(eq(schema.logoutOutbox.id, row.id)).run();
 		} catch (error) {
 			console.warn(`outbox handoff for client ${row.clientId} failed; will retry`, error);
-			break;
 		}
 	}
 }

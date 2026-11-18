@@ -166,7 +166,7 @@ describe("the schedule", () => {
 			.prepare(
 				"INSERT INTO logout_outbox (id, client_id, sub, sid, created_at) VALUES (?, ?, ?, ?, ?)",
 			)
-			.bind(rowId, "missing-client", "pairwise-person", "ended-session", Date.now())
+			.bind(rowId, "missing-client", "pairwise-person", "ended-session", Date.now() - HOUR)
 			.run();
 		await id.runCron("*/5 * * * *");
 		const remaining = await id.db
@@ -174,6 +174,12 @@ describe("the schedule", () => {
 			.bind(rowId)
 			.first();
 		expect(remaining).toBeNull();
+	});
+
+	it("prunes expired rows when a deployment moves the daily cron", async () => {
+		await addVerification("moved-daily-cron", Date.now() - HOUR).run();
+		await id.runCron("0 4 * * *");
+		expect(await has("verification", "moved-daily-cron")).toBe(false);
 	});
 
 	// A handler with no schedule never runs, and nothing would say so: the tables just keep growing.

@@ -14,6 +14,7 @@ async function pruneOlder(
 		| typeof schema.oauthAccessToken
 		| typeof schema.invitation
 		| typeof schema.deploymentInvitation
+		| typeof schema.logoutOutbox
 		| typeof schema.auditEvent,
 	column: Column,
 	before: Date,
@@ -30,6 +31,8 @@ async function pruneOlder(
  * enough for what is personal data. Stated in "Audit log" in docs/architecture.md.
  */
 export const AUDIT_RETENTION_DAYS = 90;
+/** Match the Queue's roughly 20-hour retry horizon without retaining session identifiers indefinitely. */
+export const LOGOUT_OUTBOX_RETENTION_HOURS = 24;
 
 /**
  * Deletes sessions, verifications and tokens past their time. Better Auth removes one only when
@@ -47,6 +50,12 @@ export async function pruneExpired(db: Database): Promise<void> {
 	await pruneOlder(db, schema.oauthAccessToken, schema.oauthAccessToken.expiresAt, now);
 	await pruneOlder(db, schema.invitation, schema.invitation.expiresAt, now);
 	await pruneOlder(db, schema.deploymentInvitation, schema.deploymentInvitation.expiresAt, now);
+	await pruneOlder(
+		db,
+		schema.logoutOutbox,
+		schema.logoutOutbox.createdAt,
+		new Date(now.getTime() - LOGOUT_OUTBOX_RETENTION_HOURS * 3_600_000),
+	);
 	await pruneOlder(
 		db,
 		schema.auditEvent,
