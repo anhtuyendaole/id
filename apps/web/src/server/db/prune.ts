@@ -52,14 +52,14 @@ export async function pruneExpired(db: Database): Promise<void> {
 	await pruneOlder(db, schema.deploymentInvitation, schema.deploymentInvitation.expiresAt, now);
 	await pruneOlder(
 		db,
-		schema.logoutOutbox,
-		schema.logoutOutbox.createdAt,
-		new Date(now.getTime() - LOGOUT_OUTBOX_RETENTION_HOURS * 3_600_000),
-	);
-	await pruneOlder(
-		db,
 		schema.auditEvent,
 		schema.auditEvent.at,
 		new Date(now.getTime() - AUDIT_RETENTION_DAYS * 86_400_000),
+	);
+	await pruneOlder(
+		db,
+		schema.logoutOutbox,
+		schema.logoutOutbox.createdAt,
+		new Date(now.getTime() - LOGOUT_OUTBOX_RETENTION_HOURS * 3_600_000),
 	);
 }

@@ -158,6 +158,7 @@ export const logoutOutbox = sqliteTable(
 		sub: text("sub").notNull(),
 		sid: text("sid").notNull(),
 		createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+		lastAttemptAt: integer("last_attempt_at", { mode: "timestamp_ms" }),
 	},
 	(table) => [index("logout_outbox_created_at_idx").on(table.createdAt)],
 );

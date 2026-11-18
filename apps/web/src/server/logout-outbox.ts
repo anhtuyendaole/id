@@ -1,4 +1,4 @@
-import { eq, lt } from "drizzle-orm";
+import { asc, eq, lt, sql } from "drizzle-orm";
 import { type Database, schema } from "./db";
 
 export interface OwedLogout {
@@ -59,19 +59,36 @@ export async function queueOrStoreLogout(
 }
 
 /** Retry rows after the request's handoff has had time to finish. */
-export async function flushLogoutOutbox(db: Database, queue: LogoutQueue): Promise<void> {
+export async function flushLogoutOutbox(
+	db: Database,
+	queue: LogoutQueue,
+	batchSize = BATCH,
+): Promise<void> {
 	const rows = await db
 		.select()
 		.from(schema.logoutOutbox)
 		.where(lt(schema.logoutOutbox.createdAt, new Date(Date.now() - MIN_RETRY_AGE_MS)))
-		.orderBy(schema.logoutOutbox.createdAt)
-		.limit(BATCH);
+		// Untried rows go first. A persistently failing row must not occupy this whole batch.
+		.orderBy(
+			asc(sql`coalesce(${schema.logoutOutbox.lastAttemptAt}, 0)`),
+			schema.logoutOutbox.createdAt,
+		)
+		.limit(batchSize);
 	for (const row of rows) {
 		try {
 			await queue.send({ clientId: row.clientId, sub: row.sub, sid: row.sid }, { delaySeconds: 0 });
 			await db.delete(schema.logoutOutbox).where(eq(schema.logoutOutbox.id, row.id)).run();
 		} catch (error) {
 			console.warn(`outbox handoff for client ${row.clientId} failed; will retry`, error);
+			try {
+				await db
+					.update(schema.logoutOutbox)
+					.set({ lastAttemptAt: new Date() })
+					.where(eq(schema.logoutOutbox.id, row.id))
+					.run();
+			} catch (updateError) {
+				console.warn(`could not postpone outbox row ${row.id}`, updateError);
+			}
 		}
 	}
 }

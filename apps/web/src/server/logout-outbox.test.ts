@@ -167,6 +167,51 @@ describe("logout queue outbox", () => {
 		}
 	});
 
+	it("does not let a full batch of rejected handoffs starve a younger logout", async () => {
+		const db = createDb(real);
+		const old = new Date(Date.now() - 7_200_000);
+		await db
+			.insert(schema.logoutOutbox)
+			.values(
+				Array.from({ length: 3 }, (_, index) => ({
+					id: `refused-${index}`,
+					...logout,
+					sid: `refused-session-${index}`,
+					createdAt: old,
+					lastAttemptAt: new Date(Date.now() - 300_000),
+				})),
+			)
+			.run();
+		await db
+			.insert(schema.logoutOutbox)
+			.values([
+				{
+					id: "younger",
+					...logout,
+					sid: "younger-session",
+					createdAt: new Date(Date.now() - 3_600_000),
+				},
+			])
+			.run();
+		const send = vi.fn(async (body: { sid: string }) => {
+			if (body.sid.startsWith("refused-")) throw new Error("queue refused");
+		});
+		const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			await flushLogoutOutbox(db, { send }, 3);
+			expect(send).toHaveBeenCalledTimes(3);
+			expect(send).toHaveBeenNthCalledWith(
+				1,
+				{ ...logout, sid: "younger-session" },
+				{ delaySeconds: 0 },
+			);
+			expect((await rows()).map((row) => row.id)).toEqual(["refused-0", "refused-1", "refused-2"]);
+		} finally {
+			warned.mockRestore();
+			await db.delete(schema.logoutOutbox).run();
+		}
+	});
+
 	it("prunes retained session identifiers after 24 hours", async () => {
 		const db = createDb(real);
 		await db
