@@ -7,6 +7,7 @@ import { SECOND_FACTOR_MISSING } from "../../lib/sign-in-method";
 import { PKCE_LEFT_OUT } from "../../lib/sign-in-refusal";
 import type { Database } from "../db";
 import { schema } from "../db";
+import { allowsHttpRedirectUri } from "./app-row";
 import { type RecordEvent, whereFrom } from "./audit";
 import { hasPasskey } from "./passkeys";
 import { sessionOf } from "./session-of";
@@ -402,6 +403,8 @@ export function oidcPlugins(
 		oauthProvider({
 			// Read by our patch of the provider (see "A patched dependency" in docs/architecture.md).
 			...(undelivered && ({ backchannelLogoutUndelivered: undelivered } as object)),
+			// Registration and authorization must allow the same loopback callbacks.
+			allowInsecureRedirectUri: allowsHttpRedirectUri,
 			loginPage: "/login",
 			consentPage: "/consent",
 			pairwiseSecret,

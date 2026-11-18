@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+	allowsHttpRedirectUri,
 	appRow,
 	CLIENT_SECRET_PREFIX,
 	hostOfUris,
@@ -87,6 +88,21 @@ describe("insertStatement", () => {
 });
 
 describe("problemWithRedirectUri", () => {
+	it("uses the same HTTP exception for registration and provider authorization", () => {
+		for (const host of ["localhost", "127.0.0.1"]) {
+			const uri = `http://${host}:4710/callback`;
+			expect(problemWithRedirectUri(uri)).toBeUndefined();
+			expect(allowsHttpRedirectUri(new URL(uri))).toBe(true);
+		}
+		for (const uri of [
+			"http://track.example.com/callback",
+			"http://localhost.example.com/callback",
+		]) {
+			expect(problemWithRedirectUri(uri)).toBeTruthy();
+			expect(allowsHttpRedirectUri(new URL(uri))).toBe(false);
+		}
+	});
+
 	it.each([
 		"https://track.example.com/callback",
 		"http://localhost:4710/callback",

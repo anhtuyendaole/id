@@ -162,6 +162,10 @@ export function appAddedStatement(app: string): string {
  * What an app may name as where to send someone back. An exact https URL, or plain http only on this
  * machine. A code sent elsewhere signs in whoever receives it.
  */
+export function allowsHttpRedirectUri(url: URL): boolean {
+	return url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+}
+
 export function problemWithRedirectUri(value: string): string | undefined {
 	let url: URL;
 	try {
@@ -171,8 +175,7 @@ export function problemWithRedirectUri(value: string): string | undefined {
 	}
 	if (url.hash) return `${value} has a fragment`;
 	if (url.username || url.password) return `${value} holds a name or a password`;
-	const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
-	if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) {
+	if (url.protocol !== "https:" && !allowsHttpRedirectUri(url)) {
 		return `${value} must use https`;
 	}
 	return undefined;
