@@ -9,7 +9,7 @@ wrong person in to someone else's app.
 
 ## The shape
 
-One Worker, one D1 database, a Durable Object for rate limits and a cron trigger.
+One Worker, one D1 database, a Durable Object for rate limits and cron triggers.
 
 Identity data is relational, read at sign-in and written rarely. Nobody edits it offline or
 watches it change, so ID has no per-workspace Durable Object and no sync engine, unlike Track.
@@ -951,12 +951,17 @@ has to look at each again: drop what upstream has fixed, and move the rest.
 
 Signing out of ID promises to end the person's session in every app, so a logout an app missed goes on
 a Cloudflare Queue (`LOGOUTS`, `apps/web/src/server/logouts.ts`) rather than only a warning in the log.
+Before handing it to the Queue, ID writes the client, subject and session to a D1 outbox. If the Queue
+rejects the send, the row remains and a five-minute cron tries again. The row is removed only after the
+Queue accepts the message. If the Queue accepts it but D1 cannot remove the row, a later duplicate is
+safe: an app already signed out answers successfully. If D1 cannot store the row, ID still tries the
+Queue; failure of both systems is logged but cannot be recovered automatically.
 The message holds who and which session, not the token: a logout token lives two minutes and apps refuse
 old ones, so each try signs a new one with the same `iss`, `aud`, `sub` and `sid` and a new `jti`. The
 queue tries again after a minute, then twice as long each time up to six hours, for about 20 hours. A 4xx
 ends it, as it would only repeat, and so does an app that was deleted or no longer takes logouts. Then
-the person's session in that app is left to run out. A Queue rather than the cron: the daily cron is too
-slow, and a cron every minute would run all day for something that rarely happens. A deployment without
+the person's session in that app is left to run out. Normal delivery retries use the Queue, since the
+daily cron is too slow. The five-minute cron only recovers a failed Queue handoff. A deployment without
 the binding keeps the old behaviour, a warning in the log.
 
 ## Products as clients

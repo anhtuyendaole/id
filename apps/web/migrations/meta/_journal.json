@@ -141,6 +141,13 @@
       "when": 1794711910066,
       "tag": "0019_require_two_factor",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1794994532337,
+      "tag": "0020_fine_doctor_spectrum",
+      "breakpoints": true
     }
   ]
 }
