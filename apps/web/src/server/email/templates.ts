@@ -71,6 +71,7 @@ export function workspaceInvitationEmail({
 	role,
 	email,
 	days,
+	twoFactorSetupUrl,
 }: {
 	url: string;
 	workspace: string;
@@ -78,6 +79,8 @@ export function workspaceInvitationEmail({
 	role: string;
 	email: string;
 	days: number;
+	/** Only set when this workspace requires a second factor to use its apps. */
+	twoFactorSetupUrl?: string;
 }): Message {
 	return compose({
 		subject: `An invitation to a ${PRODUCT} workspace`,
@@ -85,6 +88,11 @@ export function workspaceInvitationEmail({
 		body: [
 			`${inviter} invited you to the workspace "${workspace}" on ${PRODUCT}, as ${roleName(role).toLowerCase()}.`,
 			`To accept, sign in or create an account with this address: ${email}. The invitation works for ${days} days.`,
+			...(twoFactorSetupUrl
+				? [
+						`After joining, add a passkey or turn on two-factor sign-in at ${twoFactorSetupUrl}. Then sign in with it before opening this workspace's connected apps.`,
+					]
+				: []),
 		],
 		action: { label: "See the invitation", url },
 		footer: "If you do not know this person, ignore this email. Nothing happens unless you accept.",

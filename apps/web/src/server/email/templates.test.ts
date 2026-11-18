@@ -80,6 +80,27 @@ describe("workspaceInvitationEmail", () => {
 		expect(email.html).toContain("Free &lt;b&gt;money&lt;/b&gt;");
 		expect(email.html).not.toContain("<b>money");
 	});
+
+	it("explains the next step only for a workspace whose apps require two factors", () => {
+		const base = {
+			url,
+			workspace: "Acme",
+			inviter: "ada@example.com",
+			role: "admin",
+			email: "bob@example.com",
+			days: 7,
+		};
+		const ordinary = workspaceInvitationEmail(base);
+		expect(ordinary.text).not.toContain("two-factor sign-in");
+		const required = workspaceInvitationEmail({
+			...base,
+			twoFactorSetupUrl: "https://id.example.com/account",
+		});
+		expect(required.text).toContain("After joining, add a passkey or turn on two-factor sign-in");
+		expect(required.text).toContain("https://id.example.com/account");
+		expect(required.text).toContain("before opening this workspace's connected apps");
+		expect(required.html).toContain("https://id.example.com/account");
+	});
 });
 
 describe("accountExistsEmail", () => {

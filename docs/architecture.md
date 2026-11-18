@@ -421,7 +421,9 @@ above proves it, and the invitation is waiting.
   mistyped address cannot hand a workspace to a stranger.
 - **The email can reach anyone, so it can say little of what a stranger chose.** The subject is fixed. The
   workspace's name cannot hold a link or characters that hide text, and the sender appears by the address
-  they proved, never by the name they chose.
+  they proved, never by the name they chose. When this workspace requires two-factor sign-in for its apps,
+  the email also tells the invitee to join first, add a passkey or authenticator on their account page, and
+  sign in with it before opening a connected app. A workspace without that rule gets no extra step.
 - **Sending is limited** to 30 an hour and 100 a day per person and 3 a day per address, whoever sends
   them. That last one sits well under what an address can be sent in all, so nobody can use up what it has
   left for a sign-up code or a password reset by inviting it.

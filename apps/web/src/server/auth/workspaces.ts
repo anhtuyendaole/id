@@ -502,6 +502,11 @@ export function workspacePlugins(config: WorkspacesConfig) {
 				) => {
 					const origin = new URL(baseURL ?? request?.url ?? "http://localhost").origin;
 					const query = new URLSearchParams({ redirect: `/invitations/${id}`, email });
+					const rule = await db
+						.select({ required: schema.organization.requireTwoFactor })
+						.from(schema.organization)
+						.where(eq(schema.organization.id, workspace.id))
+						.get();
 					await mailer.send({
 						to: email,
 						...workspaceInvitationEmail({
@@ -511,6 +516,7 @@ export function workspacePlugins(config: WorkspacesConfig) {
 							role,
 							email,
 							days: INVITATION_LIFETIME_DAYS,
+							twoFactorSetupUrl: rule?.required ? `${origin}/account` : undefined,
 						}),
 					});
 				},
