@@ -592,9 +592,10 @@ describe("workspace invitation guidance", () => {
 			if (!sent) throw new Error("Invitation email has not arrived");
 			return sent;
 		});
-		expect(after.text).toContain("After joining, add a passkey or turn on two-factor sign-in");
+		expect(after.text).toContain("your existing passkey");
+		expect(after.text).toContain("If you have neither, after joining add a passkey");
 		expect(after.text).toContain(`${origin}/account`);
-		expect(after.text).toContain("before opening this workspace's connected apps");
+		expect(after.text).toContain("Before opening this workspace's connected apps");
 	});
 });
 

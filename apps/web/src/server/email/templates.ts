@@ -90,7 +90,7 @@ export function workspaceInvitationEmail({
 			`To accept, sign in or create an account with this address: ${email}. The invitation works for ${days} days.`,
 			...(twoFactorSetupUrl
 				? [
-						`After joining, add a passkey or turn on two-factor sign-in at ${twoFactorSetupUrl}. Then sign in with it before opening this workspace's connected apps.`,
+						`Before opening this workspace's connected apps, sign in with your existing passkey or with your password and authenticator code. If you have neither, after joining add a passkey or turn on two-factor sign-in at ${twoFactorSetupUrl}, then sign in again. GitHub sign-in alone does not meet this requirement.`,
 					]
 				: []),
 		],

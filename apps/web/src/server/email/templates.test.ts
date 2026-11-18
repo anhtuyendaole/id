@@ -96,9 +96,12 @@ describe("workspaceInvitationEmail", () => {
 			...base,
 			twoFactorSetupUrl: "https://id.example.com/account",
 		});
-		expect(required.text).toContain("After joining, add a passkey or turn on two-factor sign-in");
+		expect(required.text).toContain("your existing passkey");
+		expect(required.text).toContain("password and authenticator code");
+		expect(required.text).toContain("If you have neither, after joining add a passkey");
 		expect(required.text).toContain("https://id.example.com/account");
-		expect(required.text).toContain("before opening this workspace's connected apps");
+		expect(required.text).toContain("Before opening this workspace's connected apps");
+		expect(required.text).toContain("GitHub sign-in alone does not meet this requirement");
 		expect(required.html).toContain("https://id.example.com/account");
 	});
 });

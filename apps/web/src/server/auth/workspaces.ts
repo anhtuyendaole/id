@@ -49,6 +49,7 @@ import {
 } from "./workspace-access";
 import { appsOf } from "./workspace-apps";
 import { groupsSeenBy } from "./workspace-groups";
+import { twoFactorSetupUrlForInvitation } from "./workspace-invitation-guidance";
 import { showedTwoFactors } from "./workspace-two-factor";
 
 // "Workspaces" in docs/architecture.md. The organization plugin keeps the rows; every request to it
@@ -502,11 +503,7 @@ export function workspacePlugins(config: WorkspacesConfig) {
 				) => {
 					const origin = new URL(baseURL ?? request?.url ?? "http://localhost").origin;
 					const query = new URLSearchParams({ redirect: `/invitations/${id}`, email });
-					const rule = await db
-						.select({ required: schema.organization.requireTwoFactor })
-						.from(schema.organization)
-						.where(eq(schema.organization.id, workspace.id))
-						.get();
+					const twoFactorSetupUrl = await twoFactorSetupUrlForInvitation(db, workspace.id, origin);
 					await mailer.send({
 						to: email,
 						...workspaceInvitationEmail({
@@ -516,7 +513,7 @@ export function workspacePlugins(config: WorkspacesConfig) {
 							role,
 							email,
 							days: INVITATION_LIFETIME_DAYS,
-							twoFactorSetupUrl: rule?.required ? `${origin}/account` : undefined,
+							twoFactorSetupUrl,
 						}),
 					});
 				},
