@@ -421,7 +421,11 @@ above proves it, and the invitation is waiting.
   mistyped address cannot hand a workspace to a stranger.
 - **The email can reach anyone, so it can say little of what a stranger chose.** The subject is fixed. The
   workspace's name cannot hold a link or characters that hide text, and the sender appears by the address
-  they proved, never by the name they chose.
+  they proved, never by the name they chose. When this workspace requires two-factor sign-in for its apps,
+  the email tells an invitee who already has a passkey or authenticator to sign in with it before opening
+  a connected app. Someone without either is sent to their account page to set one up after joining.
+  A workspace without that rule gets no extra step. A failed read of the rule omits the optional guidance
+  but still sends the invitation, so re-inviting does not cancel the old link without sending its replacement.
 - **Sending is limited** to 30 an hour and 100 a day per person and 3 a day per address, whoever sends
   them. That last one sits well under what an address can be sent in all, so nobody can use up what it has
   left for a sign-up code or a password reset by inviting it.
@@ -732,6 +736,10 @@ Other rules:
   be registered without it. The provider still wants one or the other for `offline_access`, and refuses a
   verifier for a code that was asked for with no challenge. Whether the app really sends and checks a
   nonce is for the app.
+- **HTTP callbacks are only for exact loopback hosts.** Registration and the provider both accept
+  `http://localhost` and `http://127.0.0.1`, including when ID's own issuer uses HTTPS. This lets an
+  admin connect an app running on their own machine; other HTTP hosts are refused. The redirect URI
+  still has to match the registered URI exactly for web clients.
 - **`sid` is the session's own id, in the ID token and the logout token,** so two apps can match up a
   person for as long as one session lasts. Workspace apps (who may
   not trust each other) need this looked at before they get `backchannel_logout_uri`.

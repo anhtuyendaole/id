@@ -7,7 +7,7 @@ catalog:
   drizzle-orm: 0.45.4
   typescript: 7.0.2
   vitest: 5.1.0
-  wrangler: 4.158.0
+  wrangler: 4.162.0
   zod: 4.6.7
 
 allowBuilds:
@@ -38,4 +38,4 @@ overrides:
   esbuild@<0.25.0: 0.25.12
 
 patchedDependencies:
-  "@better-auth/oauth-provider@1.7.16": patches/@better-auth__oauth-provider@1.7.16.patch
+  "@better-auth/oauth-provider@1.7.25": patches/@better-auth__oauth-provider@1.7.25.patch

@@ -375,12 +375,11 @@ describe("a code, which is good once", () => {
 	it("is not used up by a delete that failed, which is sent once and not again", async () => {
 		const { state, use } = await withACode("code-delete-failed");
 
-		state.only = /^delete\b/i;
+		state.only = /^delete from "verification" .* returning /;
 		state.failures = 1;
 		await expect(use()).rejects.toBeInstanceOf(DatabaseError);
 
-		expect(deletes(state.sent)).toHaveLength(1);
-		expect(deletes(state.sent)[0]).toMatch(/^delete from "verification" .* returning /);
+		expect(deletes(state.sent).filter((query) => / returning /.test(query))).toHaveLength(1);
 		expect(warned).not.toHaveBeenCalled();
 		// D1 never got it, so the row is there for whoever asks next, once.
 		expect((await use())?.value).toBe("what-the-code-stands-for");

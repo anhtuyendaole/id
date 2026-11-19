@@ -7,6 +7,50 @@ Notable changes to Gateweave ID, newest first. The format follows
 Each version's [GitHub release](https://github.com/gateweavehq/id/releases) carries the same notes.
 Publishing a release deploys it to Gateweave Cloud.
 
+## [0.16.2] - 2026-11-18
+
+Workspace invitations explain the required second factor before invitees open connected apps.
+There is no migration in this release, and the signing algorithm does not change.
+
+### Fixed
+
+- **An invitation to a workspace that requires two-factor sign-in explains both paths.** Someone
+  with a passkey or authenticator signs in with it; someone without one can join, set one up on
+  ID's account page, then sign in again. Other workspaces keep the shorter invitation. If the
+  optional workspace-rule lookup fails during a re-invite, ID still sends the replacement email.
+  ([#134](https://github.com/gateweavehq/id/pull/134))
+
+### Added
+
+- **An Apple touch icon** gives ID a recognizable icon when saved to an Apple device's home
+  screen.
+
+### If you run your own
+
+- **Update.** No database migration, new secret or environment variable is required.
+
+## [0.16.1] - 2026-11-18
+
+Better Auth and its OAuth Provider are updated to 1.7.25. There is no migration in this release,
+and the signing algorithm doesn't change.
+
+### Changed
+
+- **Better Auth, Passkey and the OAuth Provider are on 1.7.25.** ID's patch to the provider is
+  carried forward unchanged: the session id reaches the token response, and a back-channel logout
+  is tried three times before it is handed to the queue.
+  ([#129](https://github.com/gateweavehq/id/pull/129))
+- **A callback on localhost must match its registered port.** An app registered for
+  `http://localhost:4710/callback` used to get a code at another port on localhost as well; it no
+  longer does, and `127.0.0.1` is not taken for `localhost`. This is the provider's own
+  tightening. Callbacks on `https` are unaffected.
+  ([#129](https://github.com/gateweavehq/id/pull/129))
+
+### If you run your own
+
+- **Update.** If an app you registered signs in from a development machine, check that its
+  callback is registered with the exact host and port it uses.
+
 ## [0.16.0] - 2026-11-16
 
 The account page is rebuilt around what a person comes to it for, and a sign-in that could finish
@@ -532,12 +576,12 @@ its secret in the body or has no PKCE can now connect, and a request that stops 
   apps, and `--client-auth` and `--no-pkce` on `apps:add`. Nothing changes for an app that says nothing. An app without
   PKCE has to send a nonce and check it, which ID cannot see. The form says so, and turning PKCE off asks for a recent
   sign-in. [Connect an
-  app](https://github.com/gateweavehq/id/blob/main/docs/connect-an-app.md#if-your-library-needs-something-else) has the
+app](https://github.com/gateweavehq/id/blob/main/docs/connect-an-app.md#if-your-library-needs-something-else) has the
   details. (#56)
 - **`pnpm test:conformance` runs the OpenID conformance suite against a local build.** It needs Docker, runs in a few
   minutes, and fails on any difference from what is written down, a better result included. CI runs it when the app's
   code or its dependencies change, and weekly. [The suite's
-  page](https://github.com/gateweavehq/id/blob/main/docs/conformance.md) lists what does not plainly pass, and why:
+page](https://github.com/gateweavehq/id/blob/main/docs/conformance.md) lists what does not plainly pass, and why:
   warnings that stay, skips the suite allows, pages it leaves for a person to look at, and one test that fails on
   purpose for apps a workspace adds, since a quiet redirect to an app anyone can add would make ID an open redirector.
   (#58)

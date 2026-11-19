@@ -552,6 +552,53 @@ async function requireTwoFactor(owner: Person, workspace: Workspace) {
 	expect(turned.status).toBe(200);
 }
 
+describe("workspace invitation guidance", () => {
+	it("adds the account setup step only while the workspace requires two factors", async () => {
+		const owner = await newPerson();
+		const workspace = await newWorkspace(owner);
+		const ordinary = await newPerson();
+		expect(
+			(
+				await api("/organization/invite-member", {
+					cookie: owner.cookie,
+					body: { organizationId: workspace.id, email: ordinary.email, role: "member" },
+				})
+			).status,
+		).toBe(200);
+		const before = await vi.waitFor(async () => {
+			const sent = (await id.emails()).find(
+				(message) => message.to === ordinary.email && message.subject.includes("invitation"),
+			);
+			if (!sent) throw new Error("Invitation email has not arrived");
+			return sent;
+		});
+		expect(before.text).not.toContain("two-factor sign-in");
+
+		await enrol(owner);
+		await requireTwoFactor(owner, workspace);
+		const required = await newPerson();
+		expect(
+			(
+				await api("/organization/invite-member", {
+					cookie: owner.cookie,
+					body: { organizationId: workspace.id, email: required.email, role: "admin" },
+				})
+			).status,
+		).toBe(200);
+		const after = await vi.waitFor(async () => {
+			const sent = (await id.emails()).find(
+				(message) => message.to === required.email && message.subject.includes("invitation"),
+			);
+			if (!sent) throw new Error("Invitation email has not arrived");
+			return sent;
+		});
+		expect(after.text).toContain("your existing passkey");
+		expect(after.text).toContain("If you have neither, after joining add a passkey");
+		expect(after.text).toContain(`${origin}/account`);
+		expect(after.text).toContain("Before opening this workspace's connected apps");
+	});
+});
+
 describe("how a session was made", () => {
 	it("is kept on the session, for each way of signing in", async () => {
 		const person = await newPerson();
